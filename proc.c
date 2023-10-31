@@ -533,13 +533,9 @@ int chpr(int pid, int priority)
 static int cpuno=cpunum;
 int prng()
 {
-
-   // uint state = (ticks + proc->pid);
-    // Combine system information to create a seed
-    cpuno=cpuno-1;
-    uint state = ticks + cpuno;
-   // cprintf("ticks%d and cpunum%d\n", ticks,cpunum);
-    //uint state = seed; // Initialize the state with the provided seed.
+    cpuno=cpuno+1;
+    uint state = ticks + cpuno; // seed value
+   // cprintf("%d \t %d \t %d \n ", ticks,cpuno,state);
     state ^= state << 13;
     state ^= state >> 17;
     state ^= state << 5;
