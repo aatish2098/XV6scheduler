@@ -22,7 +22,7 @@ exec(char *path, char **argv)
 
   if((ip = namei(path)) == 0){
     end_op();
-    return -1;
+        return -1;
   }
   ilock(ip);
   pgdir = 0;
@@ -97,6 +97,7 @@ exec(char *path, char **argv)
   proc->sz = sz;
   proc->tf->eip = elf.entry;  // main
   proc->tf->esp = sp;
+  proc->priority = 2;  // default priortiy for child
   switchuvm(proc);
   freevm(oldpgdir);
   return 0;

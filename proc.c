@@ -49,6 +49,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->priority = 10;  // default priority
 
   release(&ptable.lock);
 
@@ -120,7 +121,7 @@ int
 growproc(int n)
 {
   uint sz;
-
+  
   sz = proc->sz;
   if(n > 0){
     if((sz = allocuvm(proc->pgdir, sz, sz + n)) == 0)
@@ -142,7 +143,7 @@ fork(void)
 {
   int i, pid;
   struct proc *np;
-
+  
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
@@ -186,7 +187,7 @@ fork(void)
 void
 exit(void)
 {
-  struct proc *p;
+    struct proc *p;
   int fd;
 
   if(proc == initproc)
@@ -232,7 +233,7 @@ wait(void)
 {
   struct proc *p;
   int havekids, pid;
-
+    
   acquire(&ptable.lock);
   for(;;){
     // Scan through table looking for exited children.
@@ -279,12 +280,13 @@ wait(void)
 void
 scheduler(void)
 {
-  struct proc *p;
-
+  struct proc *p, *p1;
+  cpu->proc = 0;
+  
   for(;;){
     // Enable interrupts on this processor.
     sti();
-
+    struct proc *highP;
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -294,15 +296,24 @@ scheduler(void)
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      proc = p;
+      highP = p;
+      //choose one with highest priority
+      for(p1 = ptable.proc; p1 < &ptable.proc[NPROC]; p1++){
+	if(p1->state != RUNNABLE)
+	  continue;
+	if(highP->priority > p1->priority)   //larger value, lower priority
+	  highP = p1;
+      }
+      p = highP;
+      cpu->proc = p;
       switchuvm(p);
       p->state = RUNNING;
-      swtch(&cpu->scheduler, p->context);
+swtch(&cpu->scheduler, p->context);
       switchkvm();
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
-      proc = 0;
+      cpu->proc = 0;
     }
     release(&ptable.lock);
 
@@ -320,7 +331,7 @@ void
 sched(void)
 {
   int intena;
-
+  
   if(!holding(&ptable.lock))
     panic("sched ptable.lock");
   if(cpu->ncli != 1)
@@ -482,4 +493,55 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+int
+cps()
+{ 
+struct proc *p;
+//Enables interrupts on this processor.
+
+sti();
+
+//Loop over process table looking for process with pid.
+acquire(&ptable.lock);
+cprintf("name \t pid \t state \t priority \n");
+for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+	if(p->state == SLEEPING)
+	 cprintf("%s \t %d \t SLEEPING \t %d \n ", p->name,p->pid,p->priority);
+	else if(p->state == RUNNING)
+ 	 cprintf("%s \t %d \t RUNNING \t %d \n ", p->name,p->pid,p->priority);
+	else if(p->state == RUNNABLE)
+ 	 cprintf("%s \t %d \t RUNNABLE \t %d \n ", p->name,p->pid,p->priority);
+}
+release(&ptable.lock);
+return 22;
+}
+int chpr(int pid, int priority)
+{
+	struct proc *p;
+	acquire(&ptable.lock);
+	for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+		if(p->pid == pid){
+			p->priority = priority;
+			break;
+		}
+	}
+	release(&ptable.lock);
+	return pid;
+}
+static int cpuno=cpunum;
+int prng()
+{
+
+   // uint state = (ticks + proc->pid);
+    // Combine system information to create a seed
+    cpuno=cpuno-1;
+    uint state = ticks + cpuno;
+   // cprintf("ticks%d and cpunum%d\n", ticks,cpunum);
+    //uint state = seed; // Initialize the state with the provided seed.
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return (int)(state & 0x7FFFFFFF); // Ensure it's a positive integer.
 }
