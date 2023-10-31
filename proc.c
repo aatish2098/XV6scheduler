@@ -534,6 +534,8 @@ static int cpuno=cpunum;
 int prng()
 {
     cpuno=cpuno+1;
+    if (cpuno==0)
+    cpuno=1;
     uint state = ticks + cpuno; // seed value
    // cprintf("%d \t %d \t %d \n ", ticks,cpuno,state);
     state ^= state << 13;
