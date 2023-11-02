@@ -312,11 +312,11 @@ scheduler(void)
       
       if(p->state != RUNNABLE)
         continue;
-     cprintf("pid \t state \t passed  tickets \t winner\n");
+   //  cprintf("pid \t state \t passed  tickets \t winner\n");
       tickets_passed += p->tickets;
-     cprintf("%d \t CONTE\t %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
+    // cprintf("%d \t CONTE\t %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
       if(tickets_passed<winner){
-      cprintf("%d \t LOSER\t %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
+     // cprintf("%d \t LOSER\t %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
         continue;
       }
       // Switch to chosen process.  It is the process's job
@@ -327,7 +327,7 @@ scheduler(void)
       switchuvm(p);
      
       p->state = RUNNING;
-     cprintf("%d \t WINNER\t  %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
+  //   cprintf("%d \t WINNER\t  %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
       swtch(&cpu->scheduler, proc->context);
       switchkvm();
 
@@ -563,5 +563,5 @@ int chpr(int pid, int priority)
 
 int prng()
 {
-   return random_at_most(1000);
+   return random_at_most(10000);
 }
