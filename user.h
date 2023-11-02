@@ -26,6 +26,8 @@ int uptime(void);
 int cps(void);
 int chpr(int pid, int priority);
 int prng(void);
+int gettime(struct rtcdate *);
+int settickets(int);
 
 // ulib.c
 int stat(char*, struct stat*);

@@ -6,6 +6,8 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "rand.h"
+
 
 struct {
   struct spinlock lock;
@@ -24,6 +26,7 @@ void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+  sgenrand(unixtime());
 }
 
 //PAGEBREAK: 32
@@ -47,6 +50,7 @@ allocproc(void)
   return 0;
 
 found:
+  p->tickets = 10;  // default tickets
   p->state = EMBRYO;
   p->pid = nextpid++;
   p->priority = 10;  // default priority
@@ -86,7 +90,6 @@ userinit(void)
   extern char _binary_initcode_start[], _binary_initcode_size[];
 
   p = allocproc();
-  
   initproc = p;
   if((p->pgdir = setupkvm()) == 0)
     panic("userinit: out of memory?");
@@ -280,40 +283,58 @@ wait(void)
 void
 scheduler(void)
 {
-  struct proc *p, *p1;
-  cpu->proc = 0;
-  
+  struct proc *p;
+  int foundproc = 1;
+
   for(;;){
     // Enable interrupts on this processor.
     sti();
-    struct proc *highP;
-    // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
+
+    
+    int tickets_passed=0;
+    int totalTickets = 0;
+
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
+      totalTickets = totalTickets + p->tickets;  
+    }
+    long winner = random_at_most(totalTickets);
 
+
+    if (!foundproc) hlt();
+    foundproc = 0;
+
+    // Loop over process table looking for process to run.
+    acquire(&ptable.lock);
+    
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      
+      if(p->state != RUNNABLE)
+        continue;
+     cprintf("pid \t state \t passed  tickets \t winner\n");
+      tickets_passed += p->tickets;
+     cprintf("%d \t CONTE\t %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
+      if(tickets_passed<winner){
+      cprintf("%d \t LOSER\t %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
+        continue;
+      }
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      highP = p;
-      //choose one with highest priority
-      for(p1 = ptable.proc; p1 < &ptable.proc[NPROC]; p1++){
-	if(p1->state != RUNNABLE)
-	  continue;
-	if(highP->priority > p1->priority)   //larger value, lower priority
-	  highP = p1;
-      }
-      p = highP;
-      cpu->proc = p;
+      foundproc = 1;
+      proc = p;
       switchuvm(p);
+     
       p->state = RUNNING;
-swtch(&cpu->scheduler, p->context);
+     cprintf("%d \t WINNER\t  %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
+      swtch(&cpu->scheduler, proc->context);
       switchkvm();
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
-      cpu->proc = 0;
+      proc = 0;
+      break;
     }
     release(&ptable.lock);
 
@@ -505,14 +526,23 @@ sti();
 
 //Loop over process table looking for process with pid.
 acquire(&ptable.lock);
-cprintf("name \t pid \t state \t priority \n");
+// cprintf("name \t pid \t state \t priority \n");
+// for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+// 	if(p->state == SLEEPING)
+// 	 cprintf("%s \t %d \t SLEEPING \t %d \n ", p->name,p->pid,p->priority);
+// 	else if(p->state == RUNNING)
+//  	 cprintf("%s \t %d \t RUNNING \t %d \n ", p->name,p->pid,p->priority);
+// 	else if(p->state == RUNNABLE)
+//  	 cprintf("%s \t %d \t RUNNABLE \t %d \n ", p->name,p->pid,p->priority);
+// }
+cprintf("name \t pid \t state \t TICKETS \n");
 for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
 	if(p->state == SLEEPING)
-	 cprintf("%s \t %d \t SLEEPING \t %d \n ", p->name,p->pid,p->priority);
+	 cprintf("%s \t %d \t SLEEPING \t %d \n ", p->name,p->pid,p->tickets);
 	else if(p->state == RUNNING)
- 	 cprintf("%s \t %d \t RUNNING \t %d \n ", p->name,p->pid,p->priority);
+ 	 cprintf("%s \t %d \t RUNNING \t %d \n ", p->name,p->pid,p->tickets);
 	else if(p->state == RUNNABLE)
- 	 cprintf("%s \t %d \t RUNNABLE \t %d \n ", p->name,p->pid,p->priority);
+ 	 cprintf("%s \t %d \t RUNNABLE \t %d \n ", p->name,p->pid,p->tickets);
 }
 release(&ptable.lock);
 return 22;
@@ -530,16 +560,8 @@ int chpr(int pid, int priority)
 	release(&ptable.lock);
 	return pid;
 }
-static int cpuno=cpunum;
+
 int prng()
 {
-    cpuno=cpuno+1;
-    if (cpuno==0)
-    cpuno=1;
-    uint state = ticks + cpuno; // seed value
-   // cprintf("%d \t %d \t %d \n ", ticks,cpuno,state);
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    return (int)(state & 0x7FFFFFFF); // Ensure it's a positive integer.
+   return random_at_most(1000);
 }

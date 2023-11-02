@@ -8,6 +8,26 @@
 #include "proc.h"
 
 int
+sys_gettime(void) {
+  struct rtcdate *d;
+  if (argptr(0, (char **)&d, sizeof(struct rtcdate)) < 0)
+      return -1;
+  cmostime(d);
+  return 0;
+}
+int
+sys_settickets(void) {
+      int n;
+      if(argint(0, &n) < 0) {
+            proc->tickets = 10;
+      }
+      else {
+            proc->tickets = n;
+      }
+      return 0;
+}
+
+int
 sys_fork(void)
 {
   return fork();
