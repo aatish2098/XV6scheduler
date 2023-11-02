@@ -296,58 +296,78 @@ scheduler(void)
   struct proc *p, *p1;
   int foundproc = 1;
   cpu->proc = 0;
+  long total_tickets = 0;
+  long counter = 0;
+  long winner;
+
+  int got_total = 0; // 0 is False, 1 is True
+  int winner_found = 0;
   
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
     #if SCHEDULING_POLICY == LOTTERY
-    int tickets_passed=0;
-    int totalTickets = 0;
-
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-      totalTickets = totalTickets + p->tickets;  
-    }
-    long winner = random_at_most(totalTickets);
-
-
     if (!foundproc) hlt();
-    foundproc = 0;
+    if (got_total == 1) {
+         foundproc = 0;
+         winner = random_at_most(total_tickets);
+         total_tickets = 0;
+         counter = 0;
+         winner_found = 0;
+    }
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      
-      if(p->state != RUNNABLE)
-        continue;
-   //  cprintf("pid \t state \t passed  tickets \t winner\n");
-      tickets_passed += p->tickets;
-    // cprintf("%d \t CONTE\t %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
-      if(tickets_passed<winner){
-     // cprintf("%d \t LOSER\t %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
-        continue;
+
+      if(p->state != RUNNABLE) {
+            continue;
       }
+      // Or first time running the loop. Must find total tickets
+      // Continue to prevent process from being ran because it's not fair
+      if (got_total == 0) {
+            total_tickets += p->tickets;
+            continue;
+      }
+
+      counter += p->tickets;
+
+      if (counter < winner) {
+            // Runnable but not winner. State doesn't change. Tickets valid for next round
+            total_tickets += p->tickets;
+            continue;
+      }
+
+      if (winner_found) {
+            total_tickets += p->tickets;
+            continue;
+      }
+
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
       foundproc = 1;
       proc = p;
       switchuvm(p);
-     
       p->state = RUNNING;
-  //   cprintf("%d \t WINNER\t  %d \t %d \t %d\n", p->pid,tickets_passed,p->tickets,winner);
       swtch(&cpu->scheduler, proc->context);
       switchkvm();
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
+
+      //If it's still runnable, it it should be added to total tickets
+      if (p->state == RUNNABLE) {
+            total_tickets += p->tickets;
+
+      winner_found = 1;
+
+      }
       proc = 0;
-      break;
     }
     release(&ptable.lock);
+    got_total = 1;
     #elif SCHEDULING_POLICY == PRIORITY_RR
         struct proc *highP;
     // Loop over process table looking for process to run.
@@ -371,12 +391,13 @@ scheduler(void)
       cpu->proc = p;
       switchuvm(p);
       p->state = RUNNING;
-swtch(&cpu->scheduler, p->context);
+      swtch(&cpu->scheduler, p->context);
       switchkvm();
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       cpu->proc = 0;
+    
     }
     release(&ptable.lock);
     #endif
@@ -564,31 +585,23 @@ cps()
 { 
 struct proc *p;
 //Enables interrupts on this processor.
-acquire(&ptable.lock);
+
 sti();
 #if SCHEDULING_POLICY == PRIORITY_RR
-//Loop over process table looking for process with pid.
-
-cprintf("name \t pid \t state \t priority \n");
-for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-	if(p->state == SLEEPING)
-	 cprintf("%s \t %d \t SLEEPING \t %d \n ", p->name,p->pid,p->priority);
-	else if(p->state == RUNNING)
- 	 cprintf("%s \t %d \t RUNNING \t %d \n ", p->name,p->pid,p->priority);
-	else if(p->state == RUNNABLE)
- 	 cprintf("%s \t %d \t RUNNABLE \t %d \n ", p->name,p->pid,p->priority);
-}
+cprintf("Priority scheduler in use, change in ticket won't make a difference \n");
 #elif SCHEDULING_POLICY == LOTTERY
-cprintf("name \t pid \t state \t TICKETS \n");
+cprintf("Lottery scheduler in use, change in priority won't make a difference \n");
+#endif
+cprintf("name \t pid \t state \t priority \t tickets\n");
+acquire(&ptable.lock);
 for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
 	if(p->state == SLEEPING)
-	 cprintf("%s \t %d \t SLEEPING \t %d \n ", p->name,p->pid,p->tickets);
+	 cprintf("%s \t %d \t SLEEPING \t %d \t %d \n ", p->name,p->pid,p->priority, p->tickets);
 	else if(p->state == RUNNING)
- 	 cprintf("%s \t %d \t RUNNING \t %d \n ", p->name,p->pid,p->tickets);
+ 	 cprintf("%s \t %d \t RUNNING \t %d \t %d \n ", p->name,p->pid,p->priority, p->tickets);
 	else if(p->state == RUNNABLE)
- 	 cprintf("%s \t %d \t RUNNABLE \t %d \n ", p->name,p->pid,p->tickets);
+ 	 cprintf("%s \t %d \t RUNNABLE \t %d \t %d \n ", p->name,p->pid,p->priority, p->tickets);
 }
-#endif
 release(&ptable.lock);
 return 22;
 }
