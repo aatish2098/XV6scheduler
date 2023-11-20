@@ -28,6 +28,7 @@ OBJS = \
 	uart.o\
 	vectors.o\
 	vm.o\
+	rand.o\
 
 # Cross-compiling (e.g., on Mac OS X)
 # TOOLPREFIX = i386-jos-elf
@@ -50,6 +51,13 @@ TOOLPREFIX := $(shell if i386-jos-elf-objdump -i 2>&1 | grep '^elf32-i386$$' >/d
 	echo "*** To turn off this error, run 'gmake TOOLPREFIX= ...'." 1>&2; \
 	echo "***" 1>&2; exit 1; fi)
 endif
+
+# # If SCHEDPOLICY is not defined, it defaults to DEFAULT
+# ifndef SCHEDPOLICY
+# SCHEDPOLICY := PRIORITY
+# endif
+
+# $(info   $(SCHEDPOLICY) scheduler is being used.)
 
 # If the makefile can't find QEMU, specify its path here
 # QEMU = qemu-system-i386
@@ -75,7 +83,9 @@ AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -fno-omit-frame-pointer -std=gnu99
+SCHEDULING_POLICY ?= PRIORITY_RR
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -fno-omit-frame-pointer -std=gnu99 
+CFLAGS += -DSCHEDULING_POLICY=$(SCHEDULING_POLICY)
 #CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -Wall -MD -gdwarf-2 -m32 -Werror -fno-omit-frame-pointer
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
@@ -178,6 +188,10 @@ UPROGS=\
 	_dpro\
 	_nice\
 	_testprng\
+	_ltest\
+	_ltest1\
+	_ltest2\
+	_tail\
 	
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -245,7 +259,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
 # check in that version.
 
 EXTRA=\
-	mkfs.c ulib.c user.h cat.c echo.c ps.c nice.c dpro.c testprng.c forktest.c grep.c kill.c\
+	mkfs.c ulib.c user.h cat.c echo.c ps.c nice.c dpro.c rand.c testprng.c forktest.c grep.c tail.c kill.c\
 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
 	printf.c umalloc.c\
 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\

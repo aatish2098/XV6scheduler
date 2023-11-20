@@ -6,11 +6,23 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "rand.h"
+
+#define LOTTERY 1
+#define PRIORITY_RR 2
+
+// Choose the scheduling policy here
+#ifndef SCHEDULING_POLICY
+#define SCHEDULING_POLICY PRIORITY_RR
+#endif
+
 
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
 } ptable;
+
+
 
 static struct proc *initproc;
 
@@ -24,6 +36,7 @@ void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+  sgenrand(unixtime());
 }
 
 //PAGEBREAK: 32
@@ -47,6 +60,7 @@ allocproc(void)
   return 0;
 
 found:
+  p->tickets = 10;  // default tickets
   p->state = EMBRYO;
   p->pid = nextpid++;
   p->priority = 10;  // default priority
@@ -86,7 +100,6 @@ userinit(void)
   extern char _binary_initcode_start[], _binary_initcode_size[];
 
   p = allocproc();
-  
   initproc = p;
   if((p->pgdir = setupkvm()) == 0)
     panic("userinit: out of memory?");
@@ -281,12 +294,82 @@ void
 scheduler(void)
 {
   struct proc *p, *p1;
+  int foundproc = 1;
   cpu->proc = 0;
+  long total_tickets = 0;
+  long counter = 0;
+  long winner;
+
+  int got_total = 0; // 0 is False, 1 is True
+  int winner_found = 0;
   
   for(;;){
     // Enable interrupts on this processor.
     sti();
-    struct proc *highP;
+
+    #if SCHEDULING_POLICY == LOTTERY
+    if (!foundproc) hlt();
+    if (got_total == 1) {
+         foundproc = 0;
+         winner = random_at_most(total_tickets);
+         total_tickets = 0;
+         counter = 0;
+         winner_found = 0;
+    }
+
+    // Loop over process table looking for process to run.
+    acquire(&ptable.lock);
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+
+      if(p->state != RUNNABLE) {
+            continue;
+      }
+      // Or first time running the loop. Must find total tickets
+      // Continue to prevent process from being ran because it's not fair
+      if (got_total == 0) {
+            total_tickets += p->tickets;
+            continue;
+      }
+
+      counter += p->tickets;
+
+      if (counter < winner) {
+            // Runnable but not winner. State doesn't change. Tickets valid for next round
+            total_tickets += p->tickets;
+            continue;
+      }
+
+      if (winner_found) {
+            total_tickets += p->tickets;
+            continue;
+      }
+
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      foundproc = 1;
+      proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&cpu->scheduler, proc->context);
+      switchkvm();
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+
+      //If it's still runnable, it it should be added to total tickets
+      if (p->state == RUNNABLE) {
+            total_tickets += p->tickets;
+
+      winner_found = 1;
+
+      }
+      proc = 0;
+    }
+    release(&ptable.lock);
+    got_total = 1;
+    #elif SCHEDULING_POLICY == PRIORITY_RR
+        struct proc *highP;
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -308,14 +391,16 @@ scheduler(void)
       cpu->proc = p;
       switchuvm(p);
       p->state = RUNNING;
-swtch(&cpu->scheduler, p->context);
+      swtch(&cpu->scheduler, p->context);
       switchkvm();
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       cpu->proc = 0;
+    
     }
     release(&ptable.lock);
+    #endif
 
   }
 }
@@ -502,17 +587,20 @@ struct proc *p;
 //Enables interrupts on this processor.
 
 sti();
-
-//Loop over process table looking for process with pid.
+#if SCHEDULING_POLICY == PRIORITY_RR
+cprintf("Priority scheduler in use, change in ticket won't make a difference \n");
+#elif SCHEDULING_POLICY == LOTTERY
+cprintf("Lottery scheduler in use, change in priority won't make a difference \n");
+#endif
+cprintf("name \t pid \t state \t priority \t tickets\n");
 acquire(&ptable.lock);
-cprintf("name \t pid \t state \t priority \n");
 for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
 	if(p->state == SLEEPING)
-	 cprintf("%s \t %d \t SLEEPING \t %d \n ", p->name,p->pid,p->priority);
+	 cprintf("%s \t %d \t SLEEPING \t %d \t %d \n ", p->name,p->pid,p->priority, p->tickets);
 	else if(p->state == RUNNING)
- 	 cprintf("%s \t %d \t RUNNING \t %d \n ", p->name,p->pid,p->priority);
+ 	 cprintf("%s \t %d \t RUNNING \t %d \t %d \n ", p->name,p->pid,p->priority, p->tickets);
 	else if(p->state == RUNNABLE)
- 	 cprintf("%s \t %d \t RUNNABLE \t %d \n ", p->name,p->pid,p->priority);
+ 	 cprintf("%s \t %d \t RUNNABLE \t %d \t %d \n ", p->name,p->pid,p->priority, p->tickets);
 }
 release(&ptable.lock);
 return 22;
@@ -530,16 +618,8 @@ int chpr(int pid, int priority)
 	release(&ptable.lock);
 	return pid;
 }
-static int cpuno=cpunum;
+
 int prng()
 {
-    cpuno=cpuno+1;
-    if (cpuno==0)
-    cpuno=1;
-    uint state = ticks + cpuno; // seed value
-   // cprintf("%d \t %d \t %d \n ", ticks,cpuno,state);
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    return (int)(state & 0x7FFFFFFF); // Ensure it's a positive integer.
+   return random_at_most(10000);
 }

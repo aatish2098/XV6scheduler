@@ -23,3 +23,5 @@
 #define SYS_cps    22
 #define SYS_chpr   23
 #define SYS_prng   24
+#define SYS_gettime 25
+#define SYS_settickets 26

@@ -9,7 +9,7 @@ main(int argc, char *argv[])
     long sum=0;
      for (int i = 0; i < 1000; i++) {
       int random_num = prng();
-      sum=sum+ (random_num/1000);
+      sum=sum +random_num;
       if (random_num <=min)
       {
             min=random_num;
@@ -23,7 +23,7 @@ main(int argc, char *argv[])
     }
     // Ensure it's a positive integer.
     printf(1,"Mean \t Mininum \t Maximum \n");
-    printf(1, " %d \t %d \t %d\n",sum,min,max);
+    printf(1, " %d \t %d \t %d\n",sum/1000,min,max);
 //      printf(1, "Minimum number: %d\n", min);
 //     printf(1, "Maximum number: %d\n", max);
 
